@@ -12,9 +12,37 @@ type Blockchain struct {
 }
 
 func (bc *Blockchain) AddBlock(data string) {
-	prevBlock := bc.blocks[len(bc.blocks)-1]
-	newBlock := NewBlock(data, prevBlock.Hash)
-	bc.blocks = append(bc.blocks, newBlock)
+	// prevBlock := bc.blocks[len(bc.blocks)-1]
+	// newBlock := NewBlock(data, prevBlock.Hash)
+	// bc.blocks = append(bc.blocks, newBlock)
+
+	var lastHash []byte
+
+	err := bc.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(blocksBucket))
+		lastHash = b.Get([]byte("l"))
+
+		return nil
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	newBlock := NewBlock(data, lastHash)
+
+	err = bc.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(blocksBucket))
+		err := b.Put(newBlock.Hash, newBlock.Serialize())
+		err = b.Put([]byte("l"), newBlock.Hash)
+		bc.tip = newBlock.Hash
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		return nil
+	})
 }
 
 func NewGenesisBlock() *Block {
@@ -25,7 +53,11 @@ func NewBlockchain() *Blockchain {
 	// return &Blockchain{[]*Block{NewGenesisBlock()}}
 	var tip []byte
 	db, err := bolt.Open(dbFile, 0600, nil)
-	log.Fatal(err)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	err = db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(blocksBucket))
 
@@ -35,7 +67,11 @@ func NewBlockchain() *Blockchain {
 			err = b.Put(genesis.Hash, genesis.Serialize())
 			err = b.Put([]byte("l"), genesis.Hash)
 			tip = genesis.Hash
-			log.Fatal(err)
+
+			if err != nil {
+				log.Fatal(err)
+			}
+
 		} else {
 			tip = b.Get([]byte("l"))
 		}
